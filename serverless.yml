@@ -1,0 +1,130 @@
+service: UserAndAuth
+plugins:
+  - serverless-offline
+  - serverless-dynamodb-local
+provider:
+  name: aws
+  runtime: nodejs12.x
+  stage: ${opt:AWS_ENV, 'local'}
+  region: us-west-2
+  memorySize: 128
+  timeout: 30
+
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:Query
+      Resource:
+        Fn::GetAtt:
+          - AuthUserTable
+          - Arn
+    - Effect: "Allow"
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:Query
+      Resource:
+        Fn::GetAtt:
+          - AuthSessionTable
+          - Arn
+  environment:
+    AWS_ENV: ${opt:AWS_ENV}
+    REGION: us-west-2
+custom:
+  serverless-offline:
+    httpPort: 3000
+  dynamodb:
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+    stages:
+      - ${opt:AWS_ENV, 'local'}
+package:
+  exclude:
+    - node_modules/aws-sdk/**
+    - node_modules/serverless-dynamodb-local
+    - node_modules/serverless-offline
+    - .dynamodb/**
+    - node_modules/mocha/**
+    - node_modules/chai/**
+    - node_modules/chai-http/**
+    - node_modules/supertest/**
+
+functions:
+  createUser:
+    handler: handler.createUser
+    events:
+      - http:
+          path: user
+          method: post
+  login:
+    handler: handler.login
+    events:
+      - http:
+          path: user/login
+          method: post
+  authorizer:
+    handler: handler.authorizer
+    resultTtlInSeconds: 300
+    identitySource: method.request.header.Authorization
+  getUser:
+    handler: handler.getUser
+    events:
+      - http:
+          path: user/{email}
+          method: get
+          authorizer: authorizer
+  updateUser:
+    handler: handler.updateUser
+    events:
+      - http:
+          path: user/{email}
+          method: put
+          authorizer: authorizer
+#    Define function environment variables here
+#    environment:
+#      variable2: value2
+
+resources:
+  Resources:
+    AuthUserTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: users-${opt:AWS_ENV, 'local'}
+        AttributeDefinitions:
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: email
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+    AuthSessionTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: auth-sessions-${opt:AWS_ENV, 'local'}
+        AttributeDefinitions:
+          - AttributeName: tokenId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tokenId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+  Outputs:
+     AuthUserTableArn:
+       Description: "ARN of the UserTable"
+       Value:
+        Fn::GetAtt:
+          - AuthUserTable
+          - Arn
+       Export:
+        Name: AuthUserTableArn
+     AuthSessionTableArn:
+       Description: "Arn of the SessionTable"
+       Value:
+        Fn::GetAtt:
+          - AuthSessionTable
+          - Arn
+     AuthorizerLambdaFunctionQualifiedArn:
+       Export:
+          Name: AuthorizerLambdaQualifiedArn
